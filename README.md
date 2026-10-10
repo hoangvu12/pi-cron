@@ -1,6 +1,6 @@
 # pi-cron
 
-Cron extension for the [Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent): one-shot reminders and recurring jobs that fire into the running session.
+Cron extension for the [Pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent). One-shot reminders and recurring jobs that fire into the running session.
 
 ```
 pi> every 30 minutes, check CI and delegate the fix if red
@@ -10,7 +10,7 @@ pi> remind me at 2:30pm to deploy
     → CronCreate { cron: "30 14 <dom> <month> *", recurring: false }
 ```
 
-When a task fires, its prompt is delivered to the session as a queued follow-up message — the same channel steering messages use — so it never interrupts a running turn: it runs after pending work settles. Compose it with [pi-subagent](https://www.npmjs.com/package/@mjakl/pi-subagent) by letting the scheduled prompt delegate ("check CI, and delegate the fix if red") or with any other tool the session has.
+When a task fires, its prompt is delivered to the session as a queued follow-up message. This is the same channel steering messages use, so a fire waits for pending work to settle instead of interrupting a running turn. You can compose it with [pi-subagent](https://www.npmjs.com/package/@mjakl/pi-subagent) by letting the scheduled prompt delegate ("check CI, and delegate the fix if red"), or with any other tool the session has.
 
 ## Install
 
@@ -28,7 +28,7 @@ pi -e .
 
 | Tool | Purpose |
 |---|---|
-| `CronCreate` | Schedule a prompt — recurring on a 5-field cron expression, or one-shot at a pinned time. `durable: true` persists to `.pi/scheduled-tasks.json`. |
+| `CronCreate` | Schedule a prompt, recurring on a 5-field cron expression or one-shot at a pinned time. `durable: true` persists to `.pi/scheduled-tasks.json`. |
 | `CronDelete` | Cancel a task by id. |
 | `CronList` | List tasks with ids, schedules, next fire times, and durability. |
 
@@ -47,17 +47,23 @@ pi -e .
 "7 * * * *"    hourly (off-minute)  "30 14 28 2 *"  Feb 28 at 2:30pm
 ```
 
-Standard Vixie-cron field syntax: lists (`1,15`), ranges (`1-5`), steps (`5-50/10`), month/weekday names (`jan-mar`, `mon-fri`). All times are local.
+Standard Vixie-cron field syntax: lists (`1,15`), ranges (`1-5`), steps (`5-50/10`), month and weekday names (`jan-mar`, `mon-fri`). All times are local.
 
 ## How firing works
 
-- **Session-only (default):** the task lives in memory and dies with the session. Fine for "remind me in 5 minutes".
-- **Durable (`durable: true`):** the task is written to `<project>/.pi/scheduled-tasks.json` (found by walking up to the nearest `.pi` directory, like git finds its root) and survives restarts. Subdirectory sessions share the project's tasks.
-- **Exactly one session fires durable tasks** — a lock file (`.pi/cron.lock`, heartbeat + pid) elects an owner. Other sessions keep firing their own session-only tasks and take over within seconds if the owner dies.
-- **Restart behavior:** recurring tasks resume at their next match and fire once per missed stretch (no catch-up spam). One-shot tasks whose time passed while no session was running are reported as missed at the next launch and removed.
-- **Fire-time jitter:** recurring tasks may fire up to 10% of their period late (max 15 min); one-shots pinned to `:00`/`:30` may fire up to 90 s early. Deterministic per task, and it keeps load off the minute marks everyone lands on.
-- **Expiry:** recurring tasks live at most 30 days — they fire one final time, then are deleted. Say so when the user asks for something permanent.
-- **Budget:** at most 50 tasks across both stores.
+Session-only tasks (the default) live in memory and die with the session. That is fine for "remind me in 5 minutes".
+
+Durable tasks (`durable: true`) are written to `<project>/.pi/scheduled-tasks.json`. The store is found by walking up from the session directory to the nearest `.pi` directory, the same way git finds its root, so sessions started in a subdirectory share the project's tasks.
+
+One session at a time fires durable tasks. A lock file (`.pi/cron.lock`, heartbeat plus pid) elects the owner. Other sessions keep firing their own session-only tasks and take over within seconds if the owner dies.
+
+On restart, recurring tasks resume at their next match and fire once per missed stretch, so there is no catch-up spam. One-shot tasks whose time passed while no session was running are reported as missed at the next launch and removed.
+
+Fire times carry a small jitter: recurring tasks may fire up to 10% of their period late (max 15 min), and one-shots pinned to `:00`/`:30` may fire up to 90 s early. The offset is deterministic per task and keeps load off the minute marks everyone lands on.
+
+Recurring tasks live at most 30 days. They fire one final time, then are deleted. Mention this limit when the user asks for something permanent.
+
+The budget is 50 tasks across both stores.
 
 ## Environment variables
 
@@ -71,9 +77,11 @@ Standard Vixie-cron field syntax: lists (`1,15`), ranges (`1-5`), steps (`5-50/1
 
 ## Limitations
 
-- Tasks fire only while a Pi session is running in the project. Nothing runs in the background when Pi is closed — durable tasks resume at their next match on the next launch.
-- No webhook/remote triggers: everything is local time-based.
-- Headless (`pi -p`) runs register the tools (a durable task created there fires in the next live session) but never run the scheduler loop, since the process exits right after the prompt.
+Tasks fire only while a Pi session is running in the project. Nothing runs in the background when Pi is closed; durable tasks resume at their next match on the next launch.
+
+There are no webhook or remote triggers. Everything is local and time-based.
+
+Headless (`pi -p`) runs register the tools, and a durable task created there fires in the next live session, but the scheduler loop never runs because the process exits right after the prompt.
 
 ## Development
 
